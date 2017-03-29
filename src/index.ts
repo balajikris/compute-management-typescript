@@ -88,7 +88,7 @@ class VMSample {
 
     private createStorageAccount(): Promise<StorageModels.StorageAccount> {
         let storageAcctParams: StorageModels.StorageAccountCreateParameters = {
-            location: 'westus',
+            location: this.location,
             sku: {
                 name: 'Standard_LRS',
             },
