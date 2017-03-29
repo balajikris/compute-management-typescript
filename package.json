@@ -1,0 +1,20 @@
+{
+    "name": "compute-management-typescript",
+    "description": "This sample demonstrates how to manage Azure virtual machines using a typescript client.",
+    "version": "0.1.0",
+    "main": "./out/src/index.js",
+    "dependencies": {
+        "ms-rest": "^2.0.0",
+        "ms-rest-azure": "^2.0.0",
+        "azure-arm-compute": "^0.20.0",
+        "azure-arm-resource": "^1.6.1-preview",
+        "azure-arm-storage": "^0.15.0-preview",
+        "azure-arm-network": "^0.18.0"
+    },
+    "devDependencies": {
+        "mocha": "*",
+        "eslint": "*",
+        "@types/node": "*",
+        "@types/mocha": "*"
+    }
+}
