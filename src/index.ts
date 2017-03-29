@@ -56,13 +56,9 @@ class VMSample {
                 this.storageClient = new StorageManagementClient(credentials, this.state.subscriptionId);
                 this.networkClient = new NetworkManagementClient(credentials, this.state.subscriptionId);
                 this.createVM()
-                    .then(
-                    (vm) => console.log(`VM creation successful: ${JSON.stringify(vm)}`),
-                    (err) => console.log(`error creating VM: ${err}`));
+                    .then((vm) => console.log(`VM creation successful: ${JSON.stringify(vm)}`));
             })
-            .catch((error) => {
-                console.log(`Error occurred: ${error}`)
-            });
+            .catch((error) => console.log(`Error occurred: ${error}`));
     }
 
     private createVM(): Promise<ComputeModels.VirtualMachine> {
@@ -72,7 +68,8 @@ class VMSample {
                 let subnetTask = this.createVnet();
                 let nicTask = subnetTask.then(() => this.createNIC());
                 return Promise.all([storageTask, subnetTask, nicTask])
-                    .then(() => this.createVirtualMachine());
+                    .then(() => this.createVirtualMachine())
+                    .catch((error) => console.log(`Error occurred when creating VM resources: ${error}`));
             });
     }
 
