@@ -1,13 +1,17 @@
+/* tslint:disable */
+
 import * as msRest from 'ms-rest';
 import * as msRestAzure from 'ms-rest-azure';
 
 import ComputeManagementClient = require('azure-arm-compute');
 import StorageManagementClient = require('azure-arm-storage');
 import NetworkManagementClient = require('azure-arm-network');
+import AuthorizationManagementClient = require('azure-arm-authorization');
 import { ResourceManagementClient, ResourceModels } from 'azure-arm-resource';
 import * as StorageModels from '../node_modules/azure-arm-storage/lib/models';
 import * as ComputeModels from '../node_modules/azure-arm-compute/lib/models';
 import * as NetworkModels from '../node_modules/azure-arm-network/lib/models';
+import * as AuthorizationModels from '../node_modules/azure-arm-authorization/lib/models';
 
 class State {
     public clientId: string = process.env['CLIENT_ID'];
@@ -28,13 +32,17 @@ class VMSample {
     private ipConfigName = Helpers.generateRandomId('testcrpip');
     private domainNameLabel = Helpers.generateRandomId('testdomainname');
     private osDiskName = Helpers.generateRandomId('testosdisk');
+    private roleAssignmentName = Helpers.generateRandomId('testRole');
 
-    private location = 'eastus';
+    private location = 'westus';
+    private adminUserName = 'notadmin';
+    private adminPassword = 'Pa$$w0rd92234';
 
     private resourceClient: ResourceManagementClient;
     private computeClient: ComputeManagementClient;
     private storageClient: StorageManagementClient;
     private networkClient: NetworkManagementClient;
+    private authorizationClient: AuthorizationManagementClient;
 
     // Ubuntu config
     private ubuntuConfig = {
@@ -55,6 +63,7 @@ class VMSample {
                 this.computeClient = new ComputeManagementClient(credentials, this.state.subscriptionId);
                 this.storageClient = new StorageManagementClient(credentials, this.state.subscriptionId);
                 this.networkClient = new NetworkManagementClient(credentials, this.state.subscriptionId);
+                this.authorizationClient = new AuthorizationManagementClient(credentials, this.state.subscriptionId);
                 this.createVM()
                     .then((vm) => console.log(`VM creation successful: ${JSON.stringify(vm)}`));
             })
@@ -63,13 +72,14 @@ class VMSample {
 
     private createVM(): Promise<ComputeModels.VirtualMachine> {
         return this.createResourceGroup()
-            .then(() => {
+            .then((rg) => {
                 let storageTask = this.createStorageAccount();
                 let subnetTask = this.createVnet();
                 let nicTask = subnetTask.then(() => this.createNIC());
-                return Promise.all([storageTask, subnetTask, nicTask])
-                    .then(() => this.createVirtualMachine())
-                    .catch((error) => console.log(`Error occurred when creating VM resources: ${error}`));
+                let vmTask = Promise.all([storageTask, subnetTask, nicTask])
+                    .then(() => this.createVirtualMachine());
+                vmTask.then((vm) => this.FinalizeMSISetup(rg, vm));
+                return vmTask;
             });
     }
 
@@ -182,8 +192,8 @@ class VMSample {
 
                 let osProfile: ComputeModels.OSProfile = {
                     computerName: this.vmName,
-                    adminUsername: 'notadmin',
-                    adminPassword: 'Pa$$w0rd92234'
+                    adminUsername: this.adminUserName,
+                    adminPassword: this.adminPassword
                 };
 
                 let hardwareProfile: ComputeModels.HardwareProfile = {
@@ -218,12 +228,18 @@ class VMSample {
                     ]
                 };
 
+                // enable Managed Service Identity.
+                let identity: ComputeModels.VirtualMachineIdentity = {
+                    type: "SystemAssigned"
+                };
+
                 let vmParameters: ComputeModels.VirtualMachine = {
                     location: this.location,
                     osProfile: osProfile,
                     hardwareProfile: hardwareProfile,
                     storageProfile: storageProfile,
-                    networkProfile: networkProfile
+                    networkProfile: networkProfile,
+                    identity: identity
                 };
 
                 console.log(`\n6.Creating Virtual Machine: ${this.vmName}`);
@@ -233,6 +249,53 @@ class VMSample {
                     this.vmName,
                     vmParameters);
             });
+    }
+
+    private FinalizeMSISetup(rg: ResourceModels.ResourceGroup ,vm: ComputeModels.VirtualMachine): Promise<ComputeModels.VirtualMachineExtension> {
+      // By default, the MSI account has no permissions, the next part is assignment of permissions to the account
+      // An example is Resource Group access as Contributor.
+      let msiPrincipalId = vm.identity.principalId;
+      let roleName = "Contributor";
+      let self = this;
+
+      let rolesTask = this.authorizationClient.roleDefinitions.list(rg.id, {filter: `roleName eq ${roleName}`});
+
+      let assignRoleTask = rolesTask.then(function assignRole(roles) {
+        let contributorRole = roles[0];
+        let roleAssignmentParams: AuthorizationModels.RoleAssignmentProperties = {
+          principalId: msiPrincipalId,
+          roleDefinitionId: contributorRole.id
+        };
+
+       return self.authorizationClient.roleAssignments.create(rg.id, self.roleAssignmentName, roleAssignmentParams);
+      });
+      
+      let installMSITask = assignRoleTask.then(function installMSIExtension(role) {
+        // To be able to get the token from inside the VM, there is a service on port 50342 (default). 
+        // This service is installed by an extension.
+        let extensionName = "msiextension";
+        let extension: ComputeModels.VirtualMachineExtension = {
+          publisher: "Microsoft.ManagedIdentity",
+          virtualMachineExtensionType: "ManagedIdentityExtensionForLinux",
+          typeHandlerVersion: "1.0",
+          autoUpgradeMinorVersion: true,
+          settings: {
+            port: "50342",
+          }, 
+          location: self.location
+        };
+
+        return self.computeClient.virtualMachineExtensions.createOrUpdate(self.resourceGroupName, self.vmName, extensionName, extension);
+      });
+
+      // print login/connection info.
+      let publicIPTask = this.networkClient.publicIPAddresses.get(this.resourceGroupName, this.publicIPName);
+      publicIPTask.then(function printConnInfo(publicIp) {
+        console.log("you can connect to the VM using:");
+        console.log(`ssh ${self.adminUserName}@${publicIp.ipAddress}. The password is ${self.adminPassword}`);
+      });
+      
+      return installMSITask;
     }
 }
 
