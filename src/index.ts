@@ -3,6 +3,7 @@
 import * as msRest from 'ms-rest';
 import * as msRestAzure from 'ms-rest-azure';
 
+import uuidv4 = require('uuid/v4');
 import ComputeManagementClient = require('azure-arm-compute');
 import StorageManagementClient = require('azure-arm-storage');
 import NetworkManagementClient = require('azure-arm-network');
@@ -32,9 +33,8 @@ class VMSample {
     private ipConfigName = Helpers.generateRandomId('testcrpip');
     private domainNameLabel = Helpers.generateRandomId('testdomainname');
     private osDiskName = Helpers.generateRandomId('testosdisk');
-    private roleAssignmentName = Helpers.generateRandomId('testRole');
 
-    private location = 'westus';
+    private location = 'eastus';
     private adminUserName = 'notadmin';
     private adminPassword = 'Pa$$w0rd92234';
 
@@ -65,7 +65,7 @@ class VMSample {
                 this.networkClient = new NetworkManagementClient(credentials, this.state.subscriptionId);
                 this.authorizationClient = new AuthorizationManagementClient(credentials, this.state.subscriptionId);
                 this.createVM()
-                    .then((vm) => console.log(`VM creation successful: ${JSON.stringify(vm)}`));
+                    .then((vm) => console.log(`VM creation successful: ${vm.name} is ready.`));
             })
             .catch((error) => console.log(`Error occurred: ${error}`));
     }
@@ -252,6 +252,8 @@ class VMSample {
     }
 
     private FinalizeMSISetup(rg: ResourceModels.ResourceGroup ,vm: ComputeModels.VirtualMachine): Promise<ComputeModels.VirtualMachineExtension> {
+     console.log(`\n7. Finalizing MSI set up on the Virtual Machine: ${this.vmName}`);
+      
       // By default, the MSI account has no permissions, the next part is assignment of permissions to the account
       // An example is Resource Group access as Contributor.
       let msiPrincipalId = vm.identity.principalId;
@@ -267,7 +269,7 @@ class VMSample {
           roleDefinitionId: contributorRole.id
         };
 
-       return self.authorizationClient.roleAssignments.create(rg.id, self.roleAssignmentName, roleAssignmentParams);
+       return self.authorizationClient.roleAssignments.create(rg.id, uuidv4(), roleAssignmentParams);
       });
       
       let installMSITask = assignRoleTask.then(function installMSIExtension(role) {
@@ -288,12 +290,16 @@ class VMSample {
         return self.computeClient.virtualMachineExtensions.createOrUpdate(self.resourceGroupName, self.vmName, extensionName, extension);
       });
 
-      // print login/connection info.
-      let publicIPTask = this.networkClient.publicIPAddresses.get(this.resourceGroupName, this.publicIPName);
-      publicIPTask.then(function printConnInfo(publicIp) {
-        console.log("you can connect to the VM using:");
-        console.log(`ssh ${self.adminUserName}@${publicIp.ipAddress}. The password is ${self.adminPassword}`);
+      installMSITask.then(function displayConnInfo() {
+        console.log('');
+        // print login/connection info.
+        let publicIPTask = self.networkClient.publicIPAddresses.get(self.resourceGroupName, self.publicIPName);
+        publicIPTask.then(function _(publicIp) {
+          console.log("you can connect to the VM using:");
+          console.log(`ssh ${self.adminUserName}@${publicIp.ipAddress}. The password is ${self.adminPassword}`);
+        });  
       });
+      
       
       return installMSITask;
     }

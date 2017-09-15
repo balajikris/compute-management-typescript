@@ -10,7 +10,8 @@
         "azure-arm-resource": "^2.0.0-preview",
         "azure-arm-storage": "^2.1.0-preview",
         "azure-arm-network": "^3.0.0",
-        "azure-arm-authorization": "^4.0.0-preview"
+        "azure-arm-authorization": "^4.0.0-preview",
+        "uuid": "^3.1.0"
     },
     "devDependencies": {
         "mocha": "*",

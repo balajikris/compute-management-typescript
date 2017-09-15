@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const msRestAzure = require("ms-rest-azure");
+const uuidv4 = require("uuid/v4");
 const ComputeManagementClient = require("azure-arm-compute");
 const StorageManagementClient = require("azure-arm-storage");
 const NetworkManagementClient = require("azure-arm-network");
@@ -27,8 +28,7 @@ class VMSample {
         this.ipConfigName = Helpers.generateRandomId('testcrpip');
         this.domainNameLabel = Helpers.generateRandomId('testdomainname');
         this.osDiskName = Helpers.generateRandomId('testosdisk');
-        this.roleAssignmentName = Helpers.generateRandomId('testRole');
-        this.location = 'westus';
+        this.location = 'eastus';
         this.adminUserName = 'notadmin';
         this.adminPassword = 'Pa$$w0rd92234';
         this.ubuntuConfig = {
@@ -48,7 +48,7 @@ class VMSample {
             this.networkClient = new NetworkManagementClient(credentials, this.state.subscriptionId);
             this.authorizationClient = new AuthorizationManagementClient(credentials, this.state.subscriptionId);
             this.createVM()
-                .then((vm) => console.log(`VM creation successful: ${JSON.stringify(vm)}`));
+                .then((vm) => console.log(`VM creation successful: ${vm.name} is ready.`));
         })
             .catch((error) => console.log(`Error occurred: ${error}`));
     }
@@ -192,6 +192,7 @@ class VMSample {
         });
     }
     FinalizeMSISetup(rg, vm) {
+        console.log(`\n7. Finalizing MSI set up on the Virtual Machine: ${this.vmName}`);
         let msiPrincipalId = vm.identity.principalId;
         let roleName = "Contributor";
         let self = this;
@@ -202,7 +203,7 @@ class VMSample {
                 principalId: msiPrincipalId,
                 roleDefinitionId: contributorRole.id
             };
-            return self.authorizationClient.roleAssignments.create(rg.id, self.roleAssignmentName, roleAssignmentParams);
+            return self.authorizationClient.roleAssignments.create(rg.id, uuidv4(), roleAssignmentParams);
         });
         let installMSITask = assignRoleTask.then(function installMSIExtension(role) {
             let extensionName = "msiextension";
